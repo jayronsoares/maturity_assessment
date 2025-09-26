@@ -112,7 +112,7 @@ def main():
             
             revenue_size = st.selectbox(
                 "What's your annual revenue range?",
-                ["$5-25M", "$25-100M", "$100-500M", "$500M+"])
+                ["$500K-$2M", "$2M-$5M", "$5M-$10M", "$10M+"])
         
         diagnose = st.form_submit_button("Diagnose My Data Problems", use_container_width=True)
         
@@ -157,7 +157,7 @@ def calculate_pain_score(customer_insight, cross_sell, pricing_decisions, decisi
 
 def calculate_opportunity_cost(pain_score, revenue_base):
     # Higher pain = higher opportunity cost
-    base_cost_percentage = 0.02 + (pain_score * 0.08)  # 2% to 26% of revenue at risk
+    base_cost_percentage = 0.01 + (pain_score * 0.025)  # 1% to 8.5% of revenue at risk
     return revenue_base * base_cost_percentage
 
 def display_diagnostic_results(pain_score, opportunity_cost, revenue_base, 
@@ -257,7 +257,8 @@ def display_diagnostic_results(pain_score, opportunity_cost, revenue_base,
         """, unsafe_allow_html=True)
     
     # ROI calculation
-    investment = revenue_base * 0.003
+    # investment = revenue_base * 0.003
+    investment = max(revenue_base * 0.004, 15_000)  # 0.4% of revenue, minimum $15K
     roi = ((opportunity_cost - investment) / investment) * 100
     
     st.markdown(f"""
@@ -272,16 +273,16 @@ def display_diagnostic_results(pain_score, opportunity_cost, revenue_base,
 
 def get_revenue_base(annual_revenue):
     revenue_map = {
-        "$5-25M": 15_000_000,
-        "$25-100M": 62_500_000, 
-        "$100-500M": 300_000_000,
-        "$500M+": 750_000_000
+        "$500K-$2M": 1_250_000,
+        "$2M-$5M": 3_500_000, 
+        "$5M-$10M": 7_500_000,
+        "$10M+": 12_000_000
     }
     return revenue_map[annual_revenue]
 
 def calculate_opportunity(revenue_base, revenue_missed, churn_preventable, pricing_opportunity, team_time):
     # Revenue recovery
-    missed_map = {"Under $50K": 300_000, "$50-200K": 1_200_000, "$200-500K": 3_000_000, "$500K+": 6_000_000}
+    missed_map = {"Under $5K": 15_000, "$5-25K": 50_000, "$25-75K": 150_000, "$75K+": 300_000}
     revenue_recovery = missed_map[revenue_missed]
     
     # Churn prevention 
