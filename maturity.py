@@ -1,597 +1,451 @@
 import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
-import numpy as np
+from datetime import datetime
 
 # Page configuration
 st.set_page_config(
-    page_title="Data Engineering ROI Assessment",
-    page_icon="▣",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Business Data Health Diagnostic - DataDoctor",
+    page_icon="🏥",
+    layout="wide"
 )
 
-# Clean professional styling
-st.markdown("""
-<style>
-    .stMetric > label {
-        font-size: 0.9rem;
-        color: #4a5568;
-        font-weight: 500;
-    }
-    .stMetric > div > div {
-        font-size: 1.8rem;
-        color: #2d3748;
-        font-weight: 700;
-    }
-    .main > div {
-        padding-top: 2rem;
-    }
-    h1 {
-        color: #2d3748;
-        font-weight: 600;
-        text-align: center;
-        margin-bottom: 0.5rem;
-    }
-    .stSelectbox > label {
-        font-weight: 500;
-        color: #4a5568;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Initialize session state
+if 'current_question' not in st.session_state:
+    st.session_state.current_question = 0
+if 'answers' not in st.session_state:
+    st.session_state.answers = {}
+if 'show_report' not in st.session_state:
+    st.session_state.show_report = False
 
-def main():
-    st.title("Data Engineering ROI Assessment")
-    st.markdown("**Quantify the business impact of data engineering investments**")
-    st.markdown("---")
+# Questions data structure
+questions = [
+    {
+        'id': 'reporting_time',
+        'category': 'time',
+        'question': 'How long does it take your team to produce key business reports?',
+        'subtitle': 'Weekly sales, month-end close, performance dashboards - from request to delivery',
+        'options': [
+            {'value': 'minutes', 'label': 'Minutes to 1 hour', 'risk': 'low'},
+            {'value': 'hours', 'label': '2-8 hours', 'risk': 'low'},
+            {'value': 'day', 'label': '1-2 days', 'risk': 'medium', 'cost': 16},
+            {'value': 'days', 'label': '3-5 days', 'risk': 'high', 'cost': 40},
+            {'value': 'week', 'label': 'More than a week', 'risk': 'critical', 'cost': 80}
+        ],
+        'follow_up': 'How many people are involved in creating these reports?',
+        'follow_up_type': 'number',
+        'follow_up_label': 'Number of people'
+    },
+    {
+        'id': 'manual_work',
+        'category': 'cost',
+        'question': 'How much time does your team spend on manual data work each week?',
+        'subtitle': 'Copying data between systems, fixing errors, reconciling spreadsheets, manual entry',
+        'options': [
+            {'value': 'none', 'label': 'Almost none (< 2 hours/week)', 'risk': 'low'},
+            {'value': 'some', 'label': '5-10 hours/week', 'risk': 'medium', 'hours': 7.5},
+            {'value': 'significant', 'label': '15-25 hours/week', 'risk': 'high', 'hours': 20},
+            {'value': 'substantial', 'label': '30-40 hours/week', 'risk': 'high', 'hours': 35},
+            {'value': 'extreme', 'label': 'More than 40 hours/week', 'risk': 'critical', 'hours': 50}
+        ],
+        'follow_up': 'What is the average hourly cost of these team members?',
+        'follow_up_type': 'number',
+        'follow_up_label': 'Hourly rate ($)'
+    },
+    {
+        'id': 'data_accuracy',
+        'category': 'risk',
+        'question': 'How often do you discover errors in reports or make decisions based on incorrect data?',
+        'subtitle': 'Wrong numbers, outdated data, different reports showing different numbers',
+        'options': [
+            {'value': 'rarely', 'label': 'Rarely or never', 'risk': 'low'},
+            {'value': 'monthly', 'label': 'A few times per month', 'risk': 'medium', 'frequency': 3},
+            {'value': 'weekly', 'label': 'Weekly', 'risk': 'high', 'frequency': 4},
+            {'value': 'daily', 'label': 'Multiple times per week', 'risk': 'high', 'frequency': 12},
+            {'value': 'constant', 'label': 'Almost daily', 'risk': 'critical', 'frequency': 20}
+        ],
+        'follow_up': 'Approximately how much does a bad-data decision cost? (rough estimate)',
+        'follow_up_type': 'number',
+        'follow_up_label': 'Cost per incident ($)'
+    },
+    {
+        'id': 'decision_speed',
+        'category': 'revenue',
+        'question': 'When you need to answer an urgent business question, how quickly can you get reliable data?',
+        'subtitle': 'Example: "Which customers haven\'t ordered in 60 days?" or "What\'s inventory for product X?"',
+        'options': [
+            {'value': 'instant', 'label': 'Within minutes', 'risk': 'low'},
+            {'value': 'same_day', 'label': 'Same day (few hours)', 'risk': 'low'},
+            {'value': 'next_day', 'label': '1-2 days', 'risk': 'medium', 'delay': 1.5},
+            {'value': 'several_days', 'label': '3-5 days', 'risk': 'high', 'delay': 4},
+            {'value': 'week_plus', 'label': 'A week or more', 'risk': 'critical', 'delay': 7}
+        ],
+        'follow_up': 'How many time-sensitive opportunities or issues come up per month?',
+        'follow_up_type': 'number',
+        'follow_up_label': 'Opportunities per month'
+    },
+    {
+        'id': 'data_silos',
+        'category': 'cost',
+        'question': 'How many different systems contain critical business data that don\'t talk to each other?',
+        'subtitle': 'CRM, ERP, accounting software, Excel files, departmental databases',
+        'options': [
+            {'value': '1-2', 'label': '1-2 systems (well integrated)', 'risk': 'low'},
+            {'value': '3-5', 'label': '3-5 systems', 'risk': 'medium', 'systems': 4},
+            {'value': '6-10', 'label': '6-10 systems', 'risk': 'high', 'systems': 8},
+            {'value': '11-15', 'label': '11-15 systems', 'risk': 'high', 'systems': 13},
+            {'value': '15+', 'label': 'More than 15 systems', 'risk': 'critical', 'systems': 20}
+        ],
+        'follow_up': 'How many hours per week are spent combining data from these sources?',
+        'follow_up_type': 'number',
+        'follow_up_label': 'Hours per week'
+    },
+    {
+        'id': 'compliance_audit',
+        'category': 'risk',
+        'question': 'How confident are you in your ability to pass an audit or prove compliance?',
+        'subtitle': 'Can you show where data came from, who changed it, and prove accuracy?',
+        'options': [
+            {'value': 'very_confident', 'label': 'Very confident - full audit trail', 'risk': 'low'},
+            {'value': 'mostly_confident', 'label': 'Mostly confident', 'risk': 'low'},
+            {'value': 'somewhat_confident', 'label': 'Somewhat confident', 'risk': 'medium', 'exposure': 50000},
+            {'value': 'not_confident', 'label': 'Not very confident', 'risk': 'high', 'exposure': 150000},
+            {'value': 'worried', 'label': 'Seriously concerned', 'risk': 'critical', 'exposure': 500000}
+        ],
+        'follow_up': 'Are you subject to specific compliance requirements? (SOX, GDPR, HIPAA, etc.)',
+        'follow_up_type': 'text',
+        'follow_up_label': 'Compliance requirements (or "None")'
+    }
+]
+
+def calculate_findings():
+    findings = {
+        'total_annual_cost': 0,
+        'time_wasted': 0,
+        'risk_exposure': 0,
+        'critical_issues': [],
+        'opportunities': []
+    }
     
-    # Initialize session state
-    if 'roi_assessment_completed' not in st.session_state:
-        st.session_state.roi_assessment_completed = False
-    if 'business_inputs' not in st.session_state:
-        st.session_state.business_inputs = {}
+    # Reporting time calculations
+    if 'reporting_time' in st.session_state.answers:
+        answer = st.session_state.answers['reporting_time']
+        option = next((o for o in questions[0]['options'] if o['value'] == answer['value']), None)
+        if option and 'cost' in option and answer.get('follow_up'):
+            people = int(answer['follow_up']) if answer['follow_up'] else 1
+            hours_per_report = option['cost']
+            reports_per_year = 52
+            avg_cost_per_hour = 75
+            annual_cost = hours_per_report * people * reports_per_year * avg_cost_per_hour
+            findings['total_annual_cost'] += annual_cost
+            findings['time_wasted'] += hours_per_report * reports_per_year
+            if option['risk'] in ['high', 'critical']:
+                findings['critical_issues'].append({
+                    'area': 'Report Generation Time',
+                    'impact': f"${annual_cost:,}/year in productivity costs",
+                    'detail': f"{people} people spending {hours_per_report} hours per report, {reports_per_year} times/year"
+                })
+                findings['opportunities'].append({
+                    'area': 'Automated Reporting',
+                    'potential': f"Save ${int(annual_cost * 0.8):,}/year by automating report generation",
+                    'improvement': '80-90% time reduction'
+                })
     
-    # Clean sidebar navigation
-    with st.sidebar:
-        st.header("Assessment Navigation")
-        page = st.selectbox("Select Section:", 
-                          ["Business Assessment", "ROI Analysis", "Executive Summary", "Implementation Guide"])
+    # Manual work calculations
+    if 'manual_work' in st.session_state.answers:
+        answer = st.session_state.answers['manual_work']
+        option = next((o for o in questions[1]['options'] if o['value'] == answer['value']), None)
+        if option and 'hours' in option and answer.get('follow_up'):
+            hourly_rate = float(answer['follow_up']) if answer['follow_up'] else 75
+            weekly_hours = option['hours']
+            annual_cost = weekly_hours * 52 * hourly_rate
+            findings['total_annual_cost'] += annual_cost
+            findings['time_wasted'] += weekly_hours * 52
+            if weekly_hours >= 15:
+                findings['critical_issues'].append({
+                    'area': 'Manual Data Processing',
+                    'impact': f"${annual_cost:,}/year in labor costs",
+                    'detail': f"{weekly_hours} hours/week at ${hourly_rate}/hour"
+                })
+                findings['opportunities'].append({
+                    'area': 'Data Pipeline Automation',
+                    'potential': f"Save ${int(annual_cost * 0.75):,}/year through automation",
+                    'improvement': '75% reduction in manual work'
+                })
+    
+    # Data accuracy calculations
+    if 'data_accuracy' in st.session_state.answers:
+        answer = st.session_state.answers['data_accuracy']
+        option = next((o for o in questions[2]['options'] if o['value'] == answer['value']), None)
+        if option and 'frequency' in option and answer.get('follow_up'):
+            cost_per_incident = float(answer['follow_up']) if answer['follow_up'] else 1000
+            monthly_incidents = option['frequency']
+            annual_cost = cost_per_incident * monthly_incidents * 12
+            findings['risk_exposure'] += annual_cost
+            if option['risk'] in ['high', 'critical']:
+                findings['critical_issues'].append({
+                    'area': 'Data Quality Issues',
+                    'impact': f"${annual_cost:,}/year in bad decisions and rework",
+                    'detail': f"{monthly_incidents} incidents/month at ${cost_per_incident:,} each"
+                })
+                findings['opportunities'].append({
+                    'area': 'Data Quality Framework',
+                    'potential': f"Prevent ${int(annual_cost * 0.7):,}/year in errors",
+                    'improvement': '70-90% reduction in data errors'
+                })
+    
+    # Decision speed calculations
+    if 'decision_speed' in st.session_state.answers:
+        answer = st.session_state.answers['decision_speed']
+        option = next((o for o in questions[3]['options'] if o['value'] == answer['value']), None)
+        if option and 'delay' in option and answer.get('follow_up'):
+            opportunities_per_month = int(answer['follow_up']) if answer['follow_up'] else 5
+            avg_opportunity_value = 5000
+            opportunities_lost = opportunities_per_month * 0.2
+            annual_cost = opportunities_lost * 12 * avg_opportunity_value
+            findings['risk_exposure'] += annual_cost
+            if option['risk'] in ['high', 'critical']:
+                findings['critical_issues'].append({
+                    'area': 'Slow Decision Making',
+                    'impact': f"${annual_cost:,}/year in missed opportunities",
+                    'detail': f"{option['delay']}-day delays on {opportunities_per_month} monthly opportunities"
+                })
+                findings['opportunities'].append({
+                    'area': 'Real-Time Analytics',
+                    'potential': f"Capture ${int(annual_cost * 0.6):,}/year in faster decisions",
+                    'improvement': 'Decision time from days to minutes'
+                })
+    
+    # Data silos calculations
+    if 'data_silos' in st.session_state.answers:
+        answer = st.session_state.answers['data_silos']
+        option = next((o for o in questions[4]['options'] if o['value'] == answer['value']), None)
+        if option and 'systems' in option and answer.get('follow_up'):
+            hours_per_week = float(answer['follow_up']) if answer['follow_up'] else 10
+            annual_cost = hours_per_week * 52 * 75
+            findings['total_annual_cost'] += annual_cost
+            findings['time_wasted'] += hours_per_week * 52
+            if option['systems'] >= 6:
+                findings['critical_issues'].append({
+                    'area': 'Data Silos & Integration',
+                    'impact': f"${annual_cost:,}/year in integration labor",
+                    'detail': f"{option['systems']} disconnected systems, {hours_per_week} hours/week to reconcile"
+                })
+                findings['opportunities'].append({
+                    'area': 'Unified Data Platform',
+                    'potential': f"Save ${int(annual_cost * 0.7):,}/year with integrated data",
+                    'improvement': 'Single source of truth across all systems'
+                })
+    
+    # Compliance audit calculations
+    if 'compliance_audit' in st.session_state.answers:
+        answer = st.session_state.answers['compliance_audit']
+        option = next((o for o in questions[5]['options'] if o['value'] == answer['value']), None)
+        if option and 'exposure' in option:
+            findings['risk_exposure'] += option['exposure']
+            if option['risk'] in ['high', 'critical']:
+                compliance = answer.get('follow_up', 'regulatory requirements')
+                findings['critical_issues'].append({
+                    'area': 'Compliance & Audit Risk',
+                    'impact': f"${option['exposure']:,} potential exposure",
+                    'detail': f"Inadequate audit trail for {compliance}"
+                })
+                findings['opportunities'].append({
+                    'area': 'Data Governance & Compliance',
+                    'potential': f"Mitigate ${option['exposure']:,} in compliance risk",
+                    'improvement': 'Full audit trail and regulatory compliance'
+                })
+    
+    return findings
+
+def show_report():
+    findings = calculate_findings()
+    total_impact = findings['total_annual_cost'] + findings['risk_exposure']
+    
+    st.markdown("# Business Data Health Report")
+    st.markdown(f"**Confidential Assessment** - {datetime.now().strftime('%B %d, %Y')}")
+    st.divider()
+    
+    # Total Impact Section
+    st.markdown(f"""
+    <div style='background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 2rem; border-radius: 0.5rem; margin-bottom: 2rem;'>
+        <h2 style='color: #991b1b; margin-bottom: 1rem;'>Total Annual Impact Identified</h2>
+        <div style='font-size: 3rem; font-weight: 800; color: #dc2626; margin-bottom: 1.5rem;'>
+            ${total_impact:,}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Annual Costs", f"${findings['total_annual_cost']:,}")
+    with col2:
+        st.metric("Risk Exposure", f"${findings['risk_exposure']:,}")
+    with col3:
+        st.metric("Hours Wasted", f"{int(findings['time_wasted']):,} hrs/year")
+    
+    st.divider()
+    
+    # Critical Issues
+    if findings['critical_issues']:
+        st.markdown("## ⚠️ Critical Issues Identified")
+        for issue in findings['critical_issues']:
+            st.markdown(f"""
+            <div style='background-color: #fff; border: 1px solid #fed7aa; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem;'>
+                <h3 style='color: #1f2937; margin-bottom: 0.5rem;'>{issue['area']}</h3>
+                <p style='color: #dc2626; font-weight: 600; margin-bottom: 0.5rem;'>{issue['impact']}</p>
+                <p style='color: #6b7280;'>{issue['detail']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Opportunities
+    if findings['opportunities']:
+        st.markdown("## 📈 Revenue & Cost Reduction Opportunities")
+        for opp in findings['opportunities']:
+            st.markdown(f"""
+            <div style='background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem;'>
+                <h3 style='color: #1f2937; margin-bottom: 0.5rem;'>{opp['area']}</h3>
+                <p style='color: #059669; font-weight: 600; margin-bottom: 0.5rem;'>{opp['potential']}</p>
+                <p style='color: #6b7280;'>{opp['improvement']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    st.divider()
+    
+    # Bottom Line
+    st.markdown(f"""
+    <div style='background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 2rem; border-radius: 0.5rem; margin-bottom: 2rem;'>
+        <h2 style='color: #1e40af; margin-bottom: 1rem;'>Bottom Line</h2>
+        <p style='color: #374151; margin-bottom: 1.5rem; line-height: 1.7;'>
+            Based on your responses, your organization is facing <strong>${total_impact:,}</strong> in 
+            annual costs and risk exposure due to data challenges. The good news: most of this is preventable.
+        </p>
+        <div style='background-color: #fff; border-radius: 0.5rem; padding: 1.5rem;'>
+            <div style='color: #6b7280; margin-bottom: 0.5rem;'>Estimated First-Year ROI with Data Solutions</div>
+            <div style='font-size: 2.5rem; font-weight: 800; color: #3b82f6;'>
+                {int((total_impact * 0.6) / (total_impact * 0.15) * 100) if total_impact > 0 else 0}% ROI
+            </div>
+            <div style='color: #6b7280; margin-top: 0.5rem;'>Typical 6-8 month payback period</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Call to Action
+    st.markdown(f"""
+    <div style='background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: #fff; padding: 2.5rem; border-radius: 0.75rem;'>
+        <h2 style='margin-bottom: 1.5rem;'>Want to Increase Revenue, Decrease Costs, and Avoid Risk?</h2>
+        <p style='opacity: 0.95; margin-bottom: 2rem; font-size: 1.05rem;'>
+            Let's talk about a strategic data solution tailored to your business. I can help you:
+        </p>
+        <ul style='list-style: none; padding: 0; margin-bottom: 2rem;'>
+            <li style='margin-bottom: 1rem;'>💰 Recover ${int(findings['total_annual_cost'] * 0.7):,} annually in productivity costs</li>
+            <li style='margin-bottom: 1rem;'>🛡️ Mitigate ${findings['risk_exposure']:,} in risk exposure</li>
+            <li style='margin-bottom: 1rem;'>📈 Enable data-driven decisions in minutes instead of days</li>
+        </ul>
+        <div style='border-top: 1px solid rgba(255,255,255,0.2); padding-top: 2rem;'>
+            <p style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem;'>Schedule a 30-Minute Strategy Call</p>
+            <p style='opacity: 0.9; margin-bottom: 1.5rem;'>No obligation. We'll discuss your specific situation and potential solutions.</p>
+            <p>📧 solveproblems@datadoctor.com &nbsp;&nbsp;&nbsp; 📞 (555) 123-4567</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.divider()
+    
+    if st.button("🔄 Start New Assessment"):
+        st.session_state.current_question = 0
+        st.session_state.answers = {}
+        st.session_state.show_report = False
+        st.rerun()
+
+def show_question():
+    current_q = questions[st.session_state.current_question]
+    
+    # Header
+    st.markdown(f"### Business Data Health Diagnostic")
+    st.progress((st.session_state.current_question + 1) / len(questions))
+    st.markdown(f"**Question {st.session_state.current_question + 1} of {len(questions)}**")
+    st.divider()
+    
+    # Question
+    category_icons = {
+        'revenue': '📈',
+        'cost': '💰',
+        'risk': '🛡️',
+        'time': '📄'
+    }
+    icon = category_icons.get(current_q['category'], '❓')
+    
+    st.markdown(f"## {icon} {current_q['question']}")
+    st.markdown(f"*{current_q['subtitle']}*")
+    st.write("")
+    
+    # Options
+    current_answer = st.session_state.answers.get(current_q['id'], {})
+    
+    selected_option = st.radio(
+        "Select your answer:",
+        options=[opt['value'] for opt in current_q['options']],
+        format_func=lambda x: next((opt['label'] for opt in current_q['options'] if opt['value'] == x), x),
+        index=[opt['value'] for opt in current_q['options']].index(current_answer.get('value')) if current_answer.get('value') else None,
+        key=f"radio_{current_q['id']}"
+    )
+    
+    # Update answer
+    if selected_option:
+        if current_q['id'] not in st.session_state.answers:
+            st.session_state.answers[current_q['id']] = {}
+        st.session_state.answers[current_q['id']]['value'] = selected_option
         
-        if st.session_state.roi_assessment_completed:
-            st.success("Assessment Completed")
-            if st.button("Reset Assessment"):
-                st.session_state.roi_assessment_completed = False
-                st.session_state.business_inputs = {}
+        # Follow-up question
+        st.write("")
+        st.markdown(f"**{current_q['follow_up']}**")
+        
+        if current_q['follow_up_type'] == 'number':
+            follow_up_value = st.number_input(
+                current_q['follow_up_label'],
+                min_value=0.0,
+                value=float(current_answer.get('follow_up', 0)) if current_answer.get('follow_up') else 0.0,
+                key=f"followup_{current_q['id']}"
+            )
+            st.session_state.answers[current_q['id']]['follow_up'] = str(follow_up_value) if follow_up_value > 0 else None
+        else:
+            follow_up_value = st.text_input(
+                current_q['follow_up_label'],
+                value=current_answer.get('follow_up', ''),
+                key=f"followup_{current_q['id']}"
+            )
+            st.session_state.answers[current_q['id']]['follow_up'] = follow_up_value if follow_up_value else None
+    
+    # Navigation buttons
+    st.write("")
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        if st.session_state.current_question > 0:
+            if st.button("⬅️ Previous"):
+                st.session_state.current_question -= 1
                 st.rerun()
     
-    # Route to pages
-    if page == "Business Assessment":
-        business_assessment_page()
-    elif page == "ROI Analysis":
-        roi_analysis_page()
-    elif page == "Executive Summary":
-        executive_summary_page()
-    else:
-        implementation_guide_page()
-
-def business_assessment_page():
-    st.header("Business Data-Driven Opportunities Assessment")
-    st.write("Identify how better data capabilities can improve your decision-making, sales performance, and revenue growth")
-    
-    with st.form("business_assessment_form"):
-        # Company Profile Section
-        st.subheader("Company Profile")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            annual_revenue = st.number_input("Annual Revenue ($M)", min_value=1, max_value=50000, value=50)
-            employees = st.number_input("Number of Employees", min_value=10, max_value=100000, value=250)
-            data_users = st.number_input("Decision Makers & Analysts", min_value=5, max_value=5000, value=50)
-        
-        with col2:
-            industry = st.selectbox("Industry Sector", 
-                                  ["E-commerce/Retail", "B2B Software/SaaS", "Manufacturing", 
-                                   "Financial Services", "Healthcare", "Media/Marketing", "Other"])
-            avg_customer_value = st.number_input("Average Customer Lifetime Value ($)", 
-                                                min_value=100, max_value=1000000, value=25000)
-            churn_rate = st.slider("Annual Customer Churn Rate (%)", min_value=0, max_value=50, value=15)
-        
-        # Decision-Making & Data Gaps
-        st.subheader("Current Decision-Making Challenges")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            decision_delay = st.selectbox("How long to get data for critical business decisions?",
-                                        ["Real-time (minutes)", "Same day", "2-3 days", "1 week", "2+ weeks"])
-            missed_opportunities = st.number_input("Monthly revenue lost due to slow insights ($K)", 
-                                                 min_value=0, max_value=10000, value=200)
-            data_quality_issues = st.selectbox("How often do data quality issues impact decisions?",
-                                             ["Daily", "Weekly", "Monthly", "Rarely"])
-        
-        with col2:
-            decision_confidence = st.selectbox("Confidence level in business decisions due to data availability",
-                                             ["Very low - guessing often", "Low - limited data", 
-                                              "Medium - some good data", "High - comprehensive data"])
-            bad_decisions = st.number_input("Monthly cost of poor decisions due to data gaps ($K)", 
-                                          min_value=0, max_value=5000, value=150)
-            competitive_insights = st.selectbox("Ability to respond to market/competitor changes",
-                                              ["Very slow - weeks/months", "Slow - days", 
-                                               "Moderate - same day", "Fast - real-time"])
-        
-        # Revenue & Sales Opportunities
-        st.subheader("Revenue Growth Opportunities")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            customer_insights = st.selectbox("Current ability to predict customer behavior",
-                                           ["No predictive capability", "Basic reporting only", 
-                                            "Some analytics", "Advanced predictive models"])
-            cross_sell_potential = st.slider("Potential increase in sales with better customer insights (%)", 
-                                            min_value=0, max_value=100, value=25)
-            churn_prevention = st.slider("Preventable churn with predictive analytics (%)", 
-                                       min_value=0, max_value=80, value=30)
-        
-        with col2:
-            pricing_strategy = st.selectbox("Current pricing strategy approach",
-                                          ["Fixed pricing", "Manual adjustments", 
-                                           "Basic analytics", "Dynamic data-driven pricing"])
-            pricing_optimization = st.slider("Revenue increase potential from data-driven pricing (%)", 
-                                            min_value=0, max_value=50, value=15)
-            market_response = st.slider("Faster market response advantage (weeks)", 
-                                      min_value=0, max_value=26, value=8)
-        
-        # Operational Efficiency Through Data
-        st.subheader("Operational Efficiency Gaps")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            manual_reporting = st.slider("% of time spent on manual reporting vs strategic analysis", 
-                                       min_value=20, max_value=90, value=70)
-            process_optimization = st.selectbox("Current approach to operational optimization",
-                                              ["Manual/intuition-based", "Occasional analysis", 
-                                               "Regular monitoring", "Real-time optimization"])
-            cost_reduction_potential = st.slider("Operational cost reduction through data insights (%)", 
-                                                min_value=0, max_value=50, value=20)
-        
-        with col2:
-            inventory_forecasting = st.selectbox("Inventory/resource planning accuracy",
-                                                ["Poor - frequent stockouts/overstock", "Fair - some issues", 
-                                                 "Good - well managed", "Excellent - optimized"])
-            employee_productivity = st.slider("Productivity increase with better data access (%)", 
-                                             min_value=0, max_value=100, value=35)
-            new_revenue_streams = st.number_input("Potential new revenue from data insights ($K monthly)", 
-                                                min_value=0, max_value=2000, value=100)
-        
-        # Implementation Context
-        st.subheader("Implementation Context")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            data_culture = st.selectbox("Current data-driven culture",
-                                      ["Decisions based on gut feeling", "Some data used occasionally", 
-                                       "Data informs most decisions", "Fully data-driven organization"])
-            change_readiness = st.selectbox("Organization's readiness for data-driven transformation",
-                                          ["High resistance to change", "Some resistance", 
-                                           "Generally open to change", "Eager for innovation"])
-        
-        with col2:
-            executive_support = st.selectbox("Leadership commitment to becoming data-driven",
-                                           ["Minimal interest", "Some interest", "Moderate support", 
-                                            "Strong champion", "Top strategic priority"])
-            competitive_position = st.selectbox("Competitive position in data usage",
-                                              ["Far behind industry", "Slightly behind", "Average", 
-                                               "Slightly ahead", "Industry leader"])
-        
-        # Technical Context (simplified)
-        st.subheader("Current Data Capabilities")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            data_accessibility = st.selectbox("How easily can teams access needed data?",
-                                            ["Very difficult - requires IT help", "Difficult - complex process", 
-                                             "Moderate - some self-service", "Easy - self-service available"])
-            data_integration = st.selectbox("Data integration across business functions",
-                                          ["Siloed systems", "Some integration", 
-                                           "Well integrated", "Fully unified data"])
-        
-        with col2:
-            analytics_maturity = st.selectbox("Current analytics capabilities",
-                                            ["Basic reporting only", "Standard dashboards", 
-                                             "Advanced analytics", "AI/ML capabilities"])
-            system_reliability = st.selectbox("Data system reliability for business decisions",
-                                            ["Unreliable - frequent issues", "Sometimes unreliable", 
-                                             "Generally reliable", "Highly reliable"])
-        
-        # Submit button
-        submit_button = st.form_submit_button("Calculate Business Impact", use_container_width=True)
-        
-        if submit_button:
-            inputs = {
-                'annual_revenue': annual_revenue, 'employees': employees, 'data_users': data_users,
-                'industry': industry, 'avg_customer_value': avg_customer_value, 'churn_rate': churn_rate,
-                'decision_delay': decision_delay, 'missed_opportunities': missed_opportunities,
-                'data_quality_issues': data_quality_issues, 'decision_confidence': decision_confidence,
-                'bad_decisions': bad_decisions, 'competitive_insights': competitive_insights,
-                'customer_insights': customer_insights, 'cross_sell_potential': cross_sell_potential,
-                'churn_prevention': churn_prevention, 'pricing_strategy': pricing_strategy,
-                'pricing_optimization': pricing_optimization, 'market_response': market_response,
-                'manual_reporting': manual_reporting, 'process_optimization': process_optimization,
-                'cost_reduction_potential': cost_reduction_potential, 'inventory_forecasting': inventory_forecasting,
-                'employee_productivity': employee_productivity, 'new_revenue_streams': new_revenue_streams,
-                'data_culture': data_culture, 'change_readiness': change_readiness,
-                'executive_support': executive_support, 'competitive_position': competitive_position,
-                'data_accessibility': data_accessibility, 'data_integration': data_integration,
-                'analytics_maturity': analytics_maturity, 'system_reliability': system_reliability
-            }
-            
-            st.session_state.business_inputs = inputs
-            st.session_state.roi_assessment_completed = True
-            st.success("Assessment completed! Navigate to ROI Analysis to see how data engineering can drive your business results.")
-
-def roi_analysis_page():
-    if not st.session_state.roi_assessment_completed:
-        st.warning("Please complete the Business Assessment first.")
-        return
-    
-    inputs = st.session_state.business_inputs
-    roi_data = calculate_roi_metrics(inputs)
-    
-    st.header("Revenue Impact Analysis")
-    
-    # Key Metrics Dashboard using native Streamlit
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Annual Revenue Opportunity", f"${roi_data['annual_opportunity']:,.0f}")
     with col2:
-        st.metric("Current State Annual Cost", f"${roi_data['current_cost']:,.0f}")
-    with col3:
-        st.metric("3-Year ROI Potential", f"{roi_data['roi_percentage']:.0f}%")
-    with col4:
-        st.metric("Payback Period", f"{roi_data['payback_months']:.1f} months")
+        can_proceed = (
+            current_q['id'] in st.session_state.answers and
+            st.session_state.answers[current_q['id']].get('value') and
+            st.session_state.answers[current_q['id']].get('follow_up')
+        )
+        
+        if st.session_state.current_question < len(questions) - 1:
+            if st.button("Next Question ➡️", disabled=not can_proceed):
+                st.session_state.current_question += 1
+                st.rerun()
+        else:
+            if st.button("Generate Report 📊", disabled=not can_proceed):
+                st.session_state.show_report = True
+                st.rerun()
     
-    st.markdown("---")
-    
-    # Revenue Opportunity Breakdown
-    st.subheader("Revenue Opportunity Breakdown")
-    create_revenue_breakdown_chart(roi_data)
-    
-    # 5-Year Financial Projection
-    st.subheader("5-Year Financial Projection")
-    create_financial_projection(roi_data)
-    
-    # Current vs Future State Comparison
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Current State Annual Costs")
-        st.write(f"**Lost revenue from delays:** ${roi_data['delay_cost']:,.0f}")
-        st.write(f"**Poor decision costs:** ${roi_data['decision_cost']:,.0f}")
-        st.write(f"**Customer churn:** ${roi_data['churn_cost']:,.0f}")
-        st.write(f"**Inefficient operations:** ${roi_data['efficiency_cost']:,.0f}")
-        st.write(f"**Total Annual Cost:** ${roi_data['current_cost']:,.0f}")
-    
-    with col2:
-        st.subheader("Future State Revenue Gains")
-        st.write(f"**Increased cross-sell/upsell:** ${roi_data['cross_sell_gain']:,.0f}")
-        st.write(f"**Reduced churn:** ${roi_data['churn_prevention_value']:,.0f}")
-        st.write(f"**Pricing optimization:** ${roi_data['pricing_gain']:,.0f}")
-        st.write(f"**New revenue streams:** ${roi_data['new_revenue']:,.0f}")
-        st.write(f"**Total Annual Opportunity:** ${roi_data['annual_opportunity']:,.0f}")
-    
-    st.markdown("---")
-    
-    # Investment Requirements
-    st.subheader("Estimated Investment Requirements")
-    investment_data = calculate_investment_requirements(inputs)
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Data Migration & Setup", f"${investment_data['migration']:,.0f}")
-    with col2:
-        st.metric("Implementation & Integration", f"${investment_data['implementation']:,.0f}")
-    with col3:
-        st.metric("Annual Support & Maintenance", f"${investment_data['annual_support']:,.0f}")
+    st.write("")
+    st.info("🔒 Your responses are confidential and used only to generate your personalized report")
 
-def executive_summary_page():
-    if not st.session_state.roi_assessment_completed:
-        st.warning("Please complete the Business Assessment first.")
-        return
-    
-    inputs = st.session_state.business_inputs
-    roi_data = calculate_roi_metrics(inputs)
-    
-    st.header("Executive Summary")
-    st.subheader("Business Case: Data Engineering Investment")
-    
-    # Financial Overview
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Current State Annual Cost")
-        st.metric("Total Annual Cost", f"${roi_data['current_cost']:,.0f}")
-        st.write(f"- Revenue delays: ${roi_data['delay_cost']:,.0f}")
-        st.write(f"- Poor decisions: ${roi_data['decision_cost']:,.0f}")
-        st.write(f"- Customer churn: ${roi_data['churn_cost']:,.0f}")
-        st.write(f"- Inefficiencies: ${roi_data['efficiency_cost']:,.0f}")
-    
-    with col2:
-        st.subheader("Annual Revenue Opportunity")
-        st.metric("Total Opportunity", f"${roi_data['annual_opportunity']:,.0f}")
-        st.write(f"- Cross-sell increase: ${roi_data['cross_sell_gain']:,.0f}")
-        st.write(f"- Churn prevention: ${roi_data['churn_prevention_value']:,.0f}")
-        st.write(f"- Pricing optimization: ${roi_data['pricing_gain']:,.0f}")
-        st.write(f"- New revenue streams: ${roi_data['new_revenue']:,.0f}")
-    
-    st.markdown("---")
-    
-    # Key Financial Metrics
-    st.subheader("Key Financial Metrics")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("3-Year ROI", f"{roi_data['roi_percentage']:.0f}%")
-    with col2:
-        st.metric("Payback Period", f"{roi_data['payback_months']:.1f} months")
-    with col3:
-        st.metric("Net Annual Benefit", f"${(roi_data['annual_opportunity'] - roi_data['current_cost']):,.0f}")
-    
-    st.markdown("---")
-    
-    # Strategic Benefits
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Competitive Advantages")
-        st.write(f"- {inputs['market_response']} weeks faster time-to-market")
-        st.write(f"- {inputs['employee_productivity']}% productivity increase")
-        st.write(f"- {inputs['churn_prevention']}% churn reduction capability")
-    
-    with col2:
-        st.subheader("Risk Mitigations")
-        st.write("- Regulatory compliance automation")
-        st.write("- Reduced business continuity risk")
-        st.write("- Future-proofed scalable architecture")
-    
-    st.markdown("---")
-    
-    # Next Steps
-    st.subheader("Recommended Next Steps")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Immediate Actions (30 days):**")
-        st.write("1. Detailed technical assessment")
-        st.write("2. Stakeholder alignment workshop")
-        st.write("3. Pilot project identification")
-        st.write("4. Vendor evaluation process")
-    
-    with col2:
-        st.write("**Implementation Timeline (6-12 months):**")
-        st.write("1. Phase 1: Quick wins & data quality")
-        st.write("2. Phase 2: Core infrastructure migration")
-        st.write("3. Phase 3: Advanced analytics capabilities")
-        st.write("4. Phase 4: Optimization & scaling")
-
-def implementation_guide_page():
-    st.header("Data Engineering Implementation Guide")
-    
-    if not st.session_state.roi_assessment_completed:
-        st.info("Complete the Business Assessment first to see customized recommendations.")
-        st.markdown("---")
-    
-    # Professional Services Approach
-    st.subheader("Professional Services Approach")
-    
-    # Phase 1
-    with st.expander("Phase 1: Foundation & Quick Wins (Weeks 1-8)"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Key Objectives:**")
-            st.write("- Data quality assessment and improvements")
-            st.write("- Critical data pipeline automation")
-            st.write("- Basic monitoring implementation")
-            st.write("- Quick ROI demonstrations")
-        
-        with col2:
-            st.write("**Deliverables:**")
-            st.write("- Technical assessment report")
-            st.write("- Data quality improvement plan")
-            st.write("- Automated business reports")
-            st.write("- Performance dashboards")
-        
-        st.write("**Investment Allocation:** 25% of total project cost")
-    
-    # Phase 2
-    with st.expander("Phase 2: Core Infrastructure (Weeks 9-20)"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Key Objectives:**")
-            st.write("- Modern data platform implementation")
-            st.write("- Legacy system migration")
-            st.write("- Security and compliance framework")
-            st.write("- Scalable architecture deployment")
-        
-        with col2:
-            st.write("**Deliverables:**")
-            st.write("- Production data platform")
-            st.write("- Migrated critical data sources")
-            st.write("- Security controls")
-            st.write("- Technical documentation")
-        
-        st.write("**Investment Allocation:** 50% of total project cost")
-    
-    # Phase 3
-    with st.expander("Phase 3: Advanced Capabilities (Weeks 21-32)"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Key Objectives:**")
-            st.write("- Real-time processing implementation")
-            st.write("- Advanced analytics enablement")
-            st.write("- Self-service capabilities")
-            st.write("- Performance optimization")
-        
-        with col2:
-            st.write("**Deliverables:**")
-            st.write("- Real-time data pipelines")
-            st.write("- Self-service tools")
-            st.write("- Predictive analytics framework")
-            st.write("- Optimized performance")
-        
-        st.write("**Investment Allocation:** 25% of total project cost")
-    
-    st.markdown("---")
-    
-    # Risk Mitigation
-    st.subheader("Risk Mitigation & Success Factors")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("Critical Success Factors")
-        st.write("- Executive sponsorship for change management")
-        st.write("- Cross-functional business and IT collaboration")
-        st.write("- Phased delivery with incremental value")
-        st.write("- Comprehensive user training programs")
-        st.write("- Strong data governance framework")
-    
-    with col2:
-        st.subheader("Risk Mitigation Strategies")
-        st.write("- Start with pilot projects in low-risk areas")
-        st.write("- Maintain parallel systems during transition")
-        st.write("- Implement comprehensive testing protocols")
-        st.write("- Establish clear rollback procedures")
-        st.write("- Continuous performance monitoring")
-    
-    st.markdown("---")
-    
-    # Investment Planning
-    if st.session_state.roi_assessment_completed:
-        st.subheader("Investment Planning Framework")
-        inputs = st.session_state.business_inputs
-        roi_data = calculate_roi_metrics(inputs)
-        investment_data = calculate_investment_requirements(inputs)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Phase 1: Foundation", f"${investment_data['migration']:,.0f}")
-        with col2:
-            st.metric("Phase 2 & 3: Implementation", f"${investment_data['implementation']:,.0f}")
-        with col3:
-            st.metric("Annual Benefit Target", f"${roi_data['annual_opportunity']:,.0f}")
-    
-    # Technology Recommendations
-    st.subheader("Technology Platform Recommendations")
-    
-    platforms = {
-        "Cloud Infrastructure": "AWS, Microsoft Azure, Google Cloud Platform",
-        "Data Processing": "Apache Spark, Databricks, AWS Glue, Azure Data Factory", 
-        "Data Storage": "Snowflake, Amazon Redshift, BigQuery, Azure Synapse",
-        "Orchestration": "Apache Airflow, Prefect, AWS Step Functions"
-    }
-    
-    for category, options in platforms.items():
-        st.write(f"**{category}:** {options}")
-
-# Helper functions for calculations
-def calculate_roi_metrics(inputs):
-    annual_revenue = inputs['annual_revenue'] * 1_000_000
-    churn_rate = inputs['churn_rate'] / 100
-    
-    # Calculate current costs
-    delay_cost = inputs['missed_opportunities'] * 12 * 1000
-    decision_cost = inputs['bad_decisions'] * 12 * 1000
-    churn_cost = (annual_revenue * churn_rate) * 0.7
-    efficiency_cost = (annual_revenue * 0.15) * (inputs['manual_reporting'] / 100)  # Fixed: use 'manual_reporting' instead of 'data_preparation_time'
-    
-    current_cost = delay_cost + decision_cost + churn_cost + efficiency_cost
-    
-    # Calculate revenue opportunities
-    cross_sell_gain = annual_revenue * (inputs['cross_sell_potential'] / 100)
-    churn_prevention_value = churn_cost * (inputs['churn_prevention'] / 100)
-    pricing_gain = annual_revenue * (inputs['pricing_optimization'] / 100)
-    new_revenue = inputs['new_revenue_streams'] * 12 * 1000
-    operational_savings = (annual_revenue * 0.2) * (inputs['cost_reduction_potential'] / 100)  # Fixed: use 'cost_reduction_potential' instead of 'operational_efficiency'
-    productivity_value = (inputs['data_users'] * 100_000) * (inputs['employee_productivity'] / 100)
-    
-    annual_opportunity = cross_sell_gain + churn_prevention_value + pricing_gain + new_revenue + operational_savings + productivity_value
-    
-    # Calculate ROI
-    initial_investment = annual_revenue * 0.002
-    annual_support = initial_investment * 0.3
-    three_year_benefit = annual_opportunity * 3 * 1.05
-    three_year_investment = initial_investment + (annual_support * 2)
-    roi_percentage = ((three_year_benefit - three_year_investment) / three_year_investment) * 100
-    payback_months = (initial_investment / (annual_opportunity / 12))
-    
-    return {
-        'annual_opportunity': annual_opportunity, 'current_cost': current_cost,
-        'roi_percentage': roi_percentage, 'payback_months': payback_months,
-        'delay_cost': delay_cost, 'decision_cost': decision_cost,
-        'churn_cost': churn_cost, 'efficiency_cost': efficiency_cost,
-        'cross_sell_gain': cross_sell_gain, 'churn_prevention_value': churn_prevention_value,
-        'pricing_gain': pricing_gain, 'new_revenue': new_revenue,
-        'operational_savings': operational_savings, 'productivity_value': productivity_value,
-        'initial_investment': initial_investment, 'annual_support': annual_support
-    }
-
-def calculate_investment_requirements(inputs):
-    annual_revenue = inputs['annual_revenue'] * 1_000_000
-    migration_cost = annual_revenue * 0.001
-    implementation_cost = annual_revenue * 0.0015
-    annual_support = (migration_cost + implementation_cost) * 0.25
-    
-    return {
-        'migration': migration_cost,
-        'implementation': implementation_cost,
-        'annual_support': annual_support
-    }
-
-def create_revenue_breakdown_chart(roi_data):
-    categories = ['Cross-sell/Upsell', 'Churn Prevention', 'Pricing Optimization', 
-                 'New Revenue Streams', 'Operational Savings', 'Productivity Gains']
-    
-    values = [roi_data['cross_sell_gain'], roi_data['churn_prevention_value'], 
-             roi_data['pricing_gain'], roi_data['new_revenue'],
-             roi_data['operational_savings'], roi_data['productivity_value']]
-    
-    colors = ['#38a169', '#4299e1', '#d69e2e', '#805ad5', '#ed8936', '#38b2ac']
-    
-    fig = go.Figure(data=[go.Bar(x=categories, y=values, marker_color=colors,
-                                text=[f'${v:,.0f}' for v in values], textposition='auto')])
-    
-    fig.update_layout(title="Annual Revenue Opportunity by Category",
-                     xaxis_title="Revenue Category", yaxis_title="Annual Value ($)",
-                     height=500, showlegend=False, plot_bgcolor='white')
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-def create_financial_projection(roi_data):
-    years = list(range(1, 6))
-    annual_benefit = roi_data['annual_opportunity']
-    initial_investment = roi_data['initial_investment']
-    annual_support = roi_data['annual_support']
-    
-    cumulative_benefits = [sum([annual_benefit * (1.05 ** (i - 1)) for i in range(1, year + 1)]) for year in years]
-    cumulative_investment = [initial_investment + (annual_support * (year - 1)) if year > 1 else initial_investment for year in years]
-    net_benefit = [cb - ci for cb, ci in zip(cumulative_benefits, cumulative_investment)]
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=years, y=cumulative_benefits, mode='lines+markers',
-                            name='Cumulative Benefits', line=dict(color='#38a169', width=3)))
-    fig.add_trace(go.Scatter(x=years, y=cumulative_investment, mode='lines+markers',
-                            name='Cumulative Investment', line=dict(color='#e53e3e', width=3)))
-    fig.add_trace(go.Scatter(x=years, y=net_benefit, mode='lines+markers',
-                            name='Net Benefit', line=dict(color='#d69e2e', width=3)))
-    
-    fig.update_layout(title="5-Year Financial Projection", xaxis_title="Year", yaxis_title="Value ($)",
-                     height=500, hovermode='x unified', plot_bgcolor='white')
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-if __name__ == "__main__":
-    main()
+# Main app logic
+if st.session_state.show_report:
+    show_report()
+else:
+    show_question()
