@@ -4,9 +4,37 @@ from datetime import datetime
 # Page configuration
 st.set_page_config(
     page_title="Business Data Health Diagnostic - DataDoctor",
-    page_icon="🏥",
-    layout="wide"
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
+
+# Custom CSS for professional styling
+st.markdown("""
+<style>
+    .main {
+        background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    }
+    .stRadio > label {
+        font-weight: 600;
+        font-size: 1.1rem;
+        color: #1f2937;
+    }
+    .stTextInput > label {
+        font-weight: 600;
+        color: #1f2937;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 2rem;
+    }
+    .reportview-container {
+        background: #f8fafc;
+    }
+    h1, h2, h3 {
+        color: #1f2937;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Initialize session state
 if 'current_question' not in st.session_state:
@@ -32,7 +60,8 @@ questions = [
         ],
         'follow_up': 'How many people are involved in creating these reports?',
         'follow_up_type': 'number',
-        'follow_up_label': 'Number of people'
+        'follow_up_label': 'Number of people',
+        'follow_up_help': 'Enter the number of team members'
     },
     {
         'id': 'manual_work',
@@ -48,7 +77,8 @@ questions = [
         ],
         'follow_up': 'What is the average hourly cost of these team members?',
         'follow_up_type': 'number',
-        'follow_up_label': 'Hourly rate ($)'
+        'follow_up_label': 'Hourly rate (USD)',
+        'follow_up_help': 'Enter dollar amount without symbols (e.g., 75)'
     },
     {
         'id': 'data_accuracy',
@@ -62,9 +92,10 @@ questions = [
             {'value': 'daily', 'label': 'Multiple times per week', 'risk': 'high', 'frequency': 12},
             {'value': 'constant', 'label': 'Almost daily', 'risk': 'critical', 'frequency': 20}
         ],
-        'follow_up': 'Approximately how much does a bad-data decision cost? (rough estimate)',
+        'follow_up': 'Approximately how much does a bad-data decision cost?',
         'follow_up_type': 'number',
-        'follow_up_label': 'Cost per incident ($)'
+        'follow_up_label': 'Cost per incident (USD)',
+        'follow_up_help': 'Rough estimate in dollars (e.g., 1000)'
     },
     {
         'id': 'decision_speed',
@@ -80,7 +111,8 @@ questions = [
         ],
         'follow_up': 'How many time-sensitive opportunities or issues come up per month?',
         'follow_up_type': 'number',
-        'follow_up_label': 'Opportunities per month'
+        'follow_up_label': 'Opportunities per month',
+        'follow_up_help': 'Approximate number (e.g., 10)'
     },
     {
         'id': 'data_silos',
@@ -96,7 +128,8 @@ questions = [
         ],
         'follow_up': 'How many hours per week are spent combining data from these sources?',
         'follow_up_type': 'number',
-        'follow_up_label': 'Hours per week'
+        'follow_up_label': 'Hours per week',
+        'follow_up_help': 'Estimated hours (e.g., 15)'
     },
     {
         'id': 'compliance_audit',
@@ -110,9 +143,10 @@ questions = [
             {'value': 'not_confident', 'label': 'Not very confident', 'risk': 'high', 'exposure': 150000},
             {'value': 'worried', 'label': 'Seriously concerned', 'risk': 'critical', 'exposure': 500000}
         ],
-        'follow_up': 'Are you subject to specific compliance requirements? (SOX, GDPR, HIPAA, etc.)',
+        'follow_up': 'Are you subject to specific compliance requirements?',
         'follow_up_type': 'text',
-        'follow_up_label': 'Compliance requirements (or "None")'
+        'follow_up_label': 'Compliance requirements',
+        'follow_up_help': 'e.g., SOX, GDPR, HIPAA, or enter "None"'
     }
 ]
 
@@ -130,7 +164,7 @@ def calculate_findings():
         answer = st.session_state.answers['reporting_time']
         option = next((o for o in questions[0]['options'] if o['value'] == answer['value']), None)
         if option and 'cost' in option and answer.get('follow_up'):
-            people = int(answer['follow_up']) if answer['follow_up'] else 1
+            people = int(float(answer['follow_up']))
             hours_per_report = option['cost']
             reports_per_year = 52
             avg_cost_per_hour = 75
@@ -140,12 +174,12 @@ def calculate_findings():
             if option['risk'] in ['high', 'critical']:
                 findings['critical_issues'].append({
                     'area': 'Report Generation Time',
-                    'impact': f"${annual_cost:,}/year in productivity costs",
+                    'impact': f"${annual_cost:,.0f}/year in productivity costs",
                     'detail': f"{people} people spending {hours_per_report} hours per report, {reports_per_year} times/year"
                 })
                 findings['opportunities'].append({
                     'area': 'Automated Reporting',
-                    'potential': f"Save ${int(annual_cost * 0.8):,}/year by automating report generation",
+                    'potential': f"Save ${int(annual_cost * 0.8):,.0f}/year by automating report generation",
                     'improvement': '80-90% time reduction'
                 })
     
@@ -154,7 +188,7 @@ def calculate_findings():
         answer = st.session_state.answers['manual_work']
         option = next((o for o in questions[1]['options'] if o['value'] == answer['value']), None)
         if option and 'hours' in option and answer.get('follow_up'):
-            hourly_rate = float(answer['follow_up']) if answer['follow_up'] else 75
+            hourly_rate = float(answer['follow_up'])
             weekly_hours = option['hours']
             annual_cost = weekly_hours * 52 * hourly_rate
             findings['total_annual_cost'] += annual_cost
@@ -162,12 +196,12 @@ def calculate_findings():
             if weekly_hours >= 15:
                 findings['critical_issues'].append({
                     'area': 'Manual Data Processing',
-                    'impact': f"${annual_cost:,}/year in labor costs",
-                    'detail': f"{weekly_hours} hours/week at ${hourly_rate}/hour"
+                    'impact': f"${annual_cost:,.0f}/year in labor costs",
+                    'detail': f"{weekly_hours} hours/week at ${hourly_rate:,.0f}/hour"
                 })
                 findings['opportunities'].append({
                     'area': 'Data Pipeline Automation',
-                    'potential': f"Save ${int(annual_cost * 0.75):,}/year through automation",
+                    'potential': f"Save ${int(annual_cost * 0.75):,.0f}/year through automation",
                     'improvement': '75% reduction in manual work'
                 })
     
@@ -176,19 +210,19 @@ def calculate_findings():
         answer = st.session_state.answers['data_accuracy']
         option = next((o for o in questions[2]['options'] if o['value'] == answer['value']), None)
         if option and 'frequency' in option and answer.get('follow_up'):
-            cost_per_incident = float(answer['follow_up']) if answer['follow_up'] else 1000
+            cost_per_incident = float(answer['follow_up'])
             monthly_incidents = option['frequency']
             annual_cost = cost_per_incident * monthly_incidents * 12
             findings['risk_exposure'] += annual_cost
             if option['risk'] in ['high', 'critical']:
                 findings['critical_issues'].append({
                     'area': 'Data Quality Issues',
-                    'impact': f"${annual_cost:,}/year in bad decisions and rework",
-                    'detail': f"{monthly_incidents} incidents/month at ${cost_per_incident:,} each"
+                    'impact': f"${annual_cost:,.0f}/year in bad decisions and rework",
+                    'detail': f"{monthly_incidents} incidents/month at ${cost_per_incident:,.0f} each"
                 })
                 findings['opportunities'].append({
                     'area': 'Data Quality Framework',
-                    'potential': f"Prevent ${int(annual_cost * 0.7):,}/year in errors",
+                    'potential': f"Prevent ${int(annual_cost * 0.7):,.0f}/year in errors",
                     'improvement': '70-90% reduction in data errors'
                 })
     
@@ -197,7 +231,7 @@ def calculate_findings():
         answer = st.session_state.answers['decision_speed']
         option = next((o for o in questions[3]['options'] if o['value'] == answer['value']), None)
         if option and 'delay' in option and answer.get('follow_up'):
-            opportunities_per_month = int(answer['follow_up']) if answer['follow_up'] else 5
+            opportunities_per_month = int(float(answer['follow_up']))
             avg_opportunity_value = 5000
             opportunities_lost = opportunities_per_month * 0.2
             annual_cost = opportunities_lost * 12 * avg_opportunity_value
@@ -205,12 +239,12 @@ def calculate_findings():
             if option['risk'] in ['high', 'critical']:
                 findings['critical_issues'].append({
                     'area': 'Slow Decision Making',
-                    'impact': f"${annual_cost:,}/year in missed opportunities",
+                    'impact': f"${annual_cost:,.0f}/year in missed opportunities",
                     'detail': f"{option['delay']}-day delays on {opportunities_per_month} monthly opportunities"
                 })
                 findings['opportunities'].append({
                     'area': 'Real-Time Analytics',
-                    'potential': f"Capture ${int(annual_cost * 0.6):,}/year in faster decisions",
+                    'potential': f"Capture ${int(annual_cost * 0.6):,.0f}/year in faster decisions",
                     'improvement': 'Decision time from days to minutes'
                 })
     
@@ -219,19 +253,19 @@ def calculate_findings():
         answer = st.session_state.answers['data_silos']
         option = next((o for o in questions[4]['options'] if o['value'] == answer['value']), None)
         if option and 'systems' in option and answer.get('follow_up'):
-            hours_per_week = float(answer['follow_up']) if answer['follow_up'] else 10
+            hours_per_week = float(answer['follow_up'])
             annual_cost = hours_per_week * 52 * 75
             findings['total_annual_cost'] += annual_cost
             findings['time_wasted'] += hours_per_week * 52
             if option['systems'] >= 6:
                 findings['critical_issues'].append({
                     'area': 'Data Silos & Integration',
-                    'impact': f"${annual_cost:,}/year in integration labor",
+                    'impact': f"${annual_cost:,.0f}/year in integration labor",
                     'detail': f"{option['systems']} disconnected systems, {hours_per_week} hours/week to reconcile"
                 })
                 findings['opportunities'].append({
                     'area': 'Unified Data Platform',
-                    'potential': f"Save ${int(annual_cost * 0.7):,}/year with integrated data",
+                    'potential': f"Save ${int(annual_cost * 0.7):,.0f}/year with integrated data",
                     'improvement': 'Single source of truth across all systems'
                 })
     
@@ -245,12 +279,12 @@ def calculate_findings():
                 compliance = answer.get('follow_up', 'regulatory requirements')
                 findings['critical_issues'].append({
                     'area': 'Compliance & Audit Risk',
-                    'impact': f"${option['exposure']:,} potential exposure",
+                    'impact': f"${option['exposure']:,.0f} potential exposure",
                     'detail': f"Inadequate audit trail for {compliance}"
                 })
                 findings['opportunities'].append({
                     'area': 'Data Governance & Compliance',
-                    'potential': f"Mitigate ${option['exposure']:,} in compliance risk",
+                    'potential': f"Mitigate ${option['exposure']:,.0f} in compliance risk",
                     'improvement': 'Full audit trail and regulatory compliance'
                 })
     
@@ -260,170 +294,265 @@ def show_report():
     findings = calculate_findings()
     total_impact = findings['total_annual_cost'] + findings['risk_exposure']
     
+    # Container for professional layout
+    st.markdown("<div style='background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>", unsafe_allow_html=True)
+    
     st.markdown("# Business Data Health Report")
-    st.markdown(f"**Confidential Assessment** - {datetime.now().strftime('%B %d, %Y')}")
+    st.caption(f"Confidential Assessment  •  {datetime.now().strftime('%B %d, %Y')}")
     st.divider()
     
     # Total Impact Section
     st.markdown(f"""
-    <div style='background-color: #fef2f2; border-left: 4px solid #dc2626; padding: 2rem; border-radius: 0.5rem; margin-bottom: 2rem;'>
-        <h2 style='color: #991b1b; margin-bottom: 1rem;'>Total Annual Impact Identified</h2>
-        <div style='font-size: 3rem; font-weight: 800; color: #dc2626; margin-bottom: 1.5rem;'>
-            ${total_impact:,}
+    <div style='background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); border-left: 4px solid #dc2626; padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;'>
+        <h2 style='color: #991b1b; margin-bottom: 1rem; font-size: 1.5rem;'>Total Annual Impact Identified</h2>
+        <div style='font-size: 3rem; font-weight: 800; color: #dc2626; margin-bottom: 1rem;'>
+            ${total_impact:,.0f}
         </div>
+        <p style='color: #6b7280; font-size: 0.95rem;'>Estimated annual cost and risk exposure from data challenges</p>
     </div>
     """, unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Annual Costs", f"${findings['total_annual_cost']:,}")
+        st.metric("Annual Costs", f"${findings['total_annual_cost']:,.0f}")
     with col2:
-        st.metric("Risk Exposure", f"${findings['risk_exposure']:,}")
+        st.metric("Risk Exposure", f"${findings['risk_exposure']:,.0f}")
     with col3:
         st.metric("Hours Wasted", f"{int(findings['time_wasted']):,} hrs/year")
     
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # Critical Issues
     if findings['critical_issues']:
-        st.markdown("## ⚠️ Critical Issues Identified")
+        st.markdown("### Critical Issues Identified")
+        st.markdown("<p style='color: #6b7280; margin-bottom: 1.5rem;'>High-impact areas requiring immediate attention</p>", unsafe_allow_html=True)
+        
         for issue in findings['critical_issues']:
             st.markdown(f"""
-            <div style='background-color: #fff; border: 1px solid #fed7aa; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem;'>
-                <h3 style='color: #1f2937; margin-bottom: 0.5rem;'>{issue['area']}</h3>
-                <p style='color: #dc2626; font-weight: 600; margin-bottom: 0.5rem;'>{issue['impact']}</p>
-                <p style='color: #6b7280;'>{issue['detail']}</p>
+            <div style='background: #fff; border: 2px solid #fed7aa; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem;'>
+                <h4 style='color: #1f2937; margin: 0 0 0.5rem 0; font-size: 1.1rem;'>{issue['area']}</h4>
+                <p style='color: #dc2626; font-weight: 600; margin: 0 0 0.5rem 0; font-size: 1rem;'>{issue['impact']}</p>
+                <p style='color: #6b7280; margin: 0; font-size: 0.9rem;'>{issue['detail']}</p>
             </div>
             """, unsafe_allow_html=True)
     
     # Opportunities
     if findings['opportunities']:
-        st.markdown("## 📈 Revenue & Cost Reduction Opportunities")
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("### Revenue & Cost Reduction Opportunities")
+        st.markdown("<p style='color: #6b7280; margin-bottom: 1.5rem;'>Potential improvements with modern data solutions</p>", unsafe_allow_html=True)
+        
         for opp in findings['opportunities']:
             st.markdown(f"""
-            <div style='background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem;'>
-                <h3 style='color: #1f2937; margin-bottom: 0.5rem;'>{opp['area']}</h3>
-                <p style='color: #059669; font-weight: 600; margin-bottom: 0.5rem;'>{opp['potential']}</p>
-                <p style='color: #6b7280;'>{opp['improvement']}</p>
+            <div style='background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border: 2px solid #86efac; border-radius: 0.75rem; padding: 1.5rem; margin-bottom: 1rem;'>
+                <h4 style='color: #1f2937; margin: 0 0 0.5rem 0; font-size: 1.1rem;'>{opp['area']}</h4>
+                <p style='color: #059669; font-weight: 600; margin: 0 0 0.5rem 0; font-size: 1rem;'>{opp['potential']}</p>
+                <p style='color: #6b7280; margin: 0; font-size: 0.9rem;'>{opp['improvement']}</p>
             </div>
             """, unsafe_allow_html=True)
     
     st.divider()
     
     # Bottom Line
+    roi_percent = int((total_impact * 0.6) / (total_impact * 0.15) * 100) if total_impact > 0 else 0
+    
     st.markdown(f"""
-    <div style='background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 2rem; border-radius: 0.5rem; margin-bottom: 2rem;'>
-        <h2 style='color: #1e40af; margin-bottom: 1rem;'>Bottom Line</h2>
-        <p style='color: #374151; margin-bottom: 1.5rem; line-height: 1.7;'>
-            Based on your responses, your organization is facing <strong>${total_impact:,}</strong> in 
-            annual costs and risk exposure due to data challenges. The good news: most of this is preventable.
+    <div style='background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-left: 4px solid #3b82f6; padding: 2rem; border-radius: 0.75rem; margin: 2rem 0;'>
+        <h3 style='color: #1e40af; margin-bottom: 1rem;'>Bottom Line</h3>
+        <p style='color: #374151; margin-bottom: 1.5rem; line-height: 1.8; font-size: 1rem;'>
+            Based on your responses, your organization is facing <strong>${total_impact:,.0f}</strong> in 
+            annual costs and risk exposure due to data challenges. The good news: most of this is preventable 
+            with the right data infrastructure and processes.
         </p>
-        <div style='background-color: #fff; border-radius: 0.5rem; padding: 1.5rem;'>
-            <div style='color: #6b7280; margin-bottom: 0.5rem;'>Estimated First-Year ROI with Data Solutions</div>
-            <div style='font-size: 2.5rem; font-weight: 800; color: #3b82f6;'>
-                {int((total_impact * 0.6) / (total_impact * 0.15) * 100) if total_impact > 0 else 0}% ROI
+        <div style='background: white; border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
+            <div style='color: #6b7280; margin-bottom: 0.5rem; font-size: 0.9rem;'>Estimated First-Year ROI with Data Solutions</div>
+            <div style='font-size: 2.5rem; font-weight: 800; color: #3b82f6; margin-bottom: 0.5rem;'>
+                {roi_percent}% ROI
             </div>
-            <div style='color: #6b7280; margin-top: 0.5rem;'>Typical 6-8 month payback period</div>
+            <div style='color: #6b7280; font-size: 0.9rem;'>Typical 6-8 month payback period</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
     # Call to Action
     st.markdown(f"""
-    <div style='background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: #fff; padding: 2.5rem; border-radius: 0.75rem;'>
-        <h2 style='margin-bottom: 1.5rem;'>Want to Increase Revenue, Decrease Costs, and Avoid Risk?</h2>
-        <p style='opacity: 0.95; margin-bottom: 2rem; font-size: 1.05rem;'>
-            Let's talk about a strategic data solution tailored to your business. I can help you:
+    <div style='background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%); color: white; padding: 2.5rem; border-radius: 0.75rem; margin: 2rem 0;'>
+        <h2 style='color: white; margin-bottom: 1.5rem; font-size: 1.75rem;'>Ready to Transform Your Data Operations?</h2>
+        <p style='opacity: 0.95; margin-bottom: 2rem; font-size: 1.05rem; line-height: 1.7;'>
+            Let's discuss a strategic data solution tailored to your business. Our solutions can help you:
         </p>
-        <ul style='list-style: none; padding: 0; margin-bottom: 2rem;'>
-            <li style='margin-bottom: 1rem;'>💰 Recover ${int(findings['total_annual_cost'] * 0.7):,} annually in productivity costs</li>
-            <li style='margin-bottom: 1rem;'>🛡️ Mitigate ${findings['risk_exposure']:,} in risk exposure</li>
-            <li style='margin-bottom: 1rem;'>📈 Enable data-driven decisions in minutes instead of days</li>
-        </ul>
+        <div style='background: rgba(255,255,255,0.1); border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 2rem;'>
+            <div style='margin-bottom: 1rem; display: flex; align-items: start;'>
+                <span style='font-size: 1.5rem; margin-right: 1rem;'>💰</span>
+                <span>Recover <strong>${int(findings['total_annual_cost'] * 0.7):,.0f}</strong> annually in productivity costs</span>
+            </div>
+            <div style='margin-bottom: 1rem; display: flex; align-items: start;'>
+                <span style='font-size: 1.5rem; margin-right: 1rem;'>🛡️</span>
+                <span>Mitigate <strong>${findings['risk_exposure']:,.0f}</strong> in risk exposure</span>
+            </div>
+            <div style='display: flex; align-items: start;'>
+                <span style='font-size: 1.5rem; margin-right: 1rem;'>⚡</span>
+                <span>Enable data-driven decisions in <strong>minutes instead of days</strong></span>
+            </div>
+        </div>
         <div style='border-top: 1px solid rgba(255,255,255,0.2); padding-top: 2rem;'>
             <p style='font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem;'>Schedule a 30-Minute Strategy Call</p>
             <p style='opacity: 0.9; margin-bottom: 1.5rem;'>No obligation. We'll discuss your specific situation and potential solutions.</p>
-            <p>📧 solveproblems@datadoctor.com &nbsp;&nbsp;&nbsp; 📞 (555) 123-4567</p>
+            <div style='display: flex; flex-wrap: wrap; gap: 2rem; font-size: 1rem;'>
+                <div><strong>Email:</strong> jayron.soares@gayaanalytics.com.br</div>
+                <div><strong>Phone:</strong> +55(21) 98983-8805</div>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    st.divider()
+    st.markdown("</div>", unsafe_allow_html=True)
     
-    if st.button("🔄 Start New Assessment"):
-        st.session_state.current_question = 0
-        st.session_state.answers = {}
-        st.session_state.show_report = False
-        st.rerun()
+    # Action buttons
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        if st.button("Start New Assessment", use_container_width=True):
+            st.session_state.current_question = 0
+            st.session_state.answers = {}
+            st.session_state.show_report = False
+            st.rerun()
+    with col2:
+        if st.button("Download Report (PDF)", use_container_width=True, disabled=True):
+            st.info("PDF download coming soon")
 
 def show_question():
     current_q = questions[st.session_state.current_question]
     
-    # Header
-    st.markdown(f"### Business Data Health Diagnostic")
-    st.progress((st.session_state.current_question + 1) / len(questions))
-    st.markdown(f"**Question {st.session_state.current_question + 1} of {len(questions)}**")
-    st.divider()
+    # Professional container
+    st.markdown("""
+    <div style='background: white; padding: 2.5rem; border-radius: 1rem; box-shadow: 0 10px 40px rgba(0,0,0,0.1); margin: 2rem auto; max-width: 900px;'>
+    """, unsafe_allow_html=True)
     
-    # Question
+    # Header with progress
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown("### Business Data Health Diagnostic")
+    with col2:
+        st.markdown(f"<p style='text-align: right; color: #6b7280; margin-top: 0.5rem;'>Question {st.session_state.current_question + 1} of {len(questions)}</p>", unsafe_allow_html=True)
+    
+    progress_percent = (st.session_state.current_question + 1) / len(questions)
+    st.progress(progress_percent)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Question with icon
     category_icons = {
         'revenue': '📈',
         'cost': '💰',
         'risk': '🛡️',
-        'time': '📄'
+        'time': '⏱️'
     }
-    icon = category_icons.get(current_q['category'], '❓')
+    icon = category_icons.get(current_q['category'], '📋')
     
     st.markdown(f"## {icon} {current_q['question']}")
-    st.markdown(f"*{current_q['subtitle']}*")
-    st.write("")
+    st.markdown(f"<p style='color: #6b7280; font-size: 1rem; margin-bottom: 2rem;'>{current_q['subtitle']}</p>", unsafe_allow_html=True)
     
-    # Options
+    # Get current answer
     current_answer = st.session_state.answers.get(current_q['id'], {})
     
-    selected_option = st.radio(
-        "Select your answer:",
-        options=[opt['value'] for opt in current_q['options']],
-        format_func=lambda x: next((opt['label'] for opt in current_q['options'] if opt['value'] == x), x),
-        index=[opt['value'] for opt in current_q['options']].index(current_answer.get('value')) if current_answer.get('value') else None,
-        key=f"radio_{current_q['id']}"
-    )
-    
-    # Update answer
-    if selected_option:
-        if current_q['id'] not in st.session_state.answers:
-            st.session_state.answers[current_q['id']] = {}
-        st.session_state.answers[current_q['id']]['value'] = selected_option
+    # Options with better styling
+    selected_option = None
+    for idx, opt in enumerate(current_q['options']):
+        is_selected = current_answer.get('value') == opt['value']
         
-        # Follow-up question
-        st.write("")
+        # Risk badge styling
+        risk_colors = {
+            'low': ('background: #d1fae5; color: #065f46;', 'Healthy'),
+            'medium': ('background: #fef3c7; color: #92400e;', 'Attention'),
+            'high': ('background: #fed7aa; color: #9a3412;', 'High Impact'),
+            'critical': ('background: #fecaca; color: #991b1b;', 'Critical')
+        }
+        risk_style, risk_label = risk_colors.get(opt.get('risk', 'low'), ('', ''))
+        
+        button_style = f"""
+        <div style='
+            border: 2px solid {"#3b82f6" if is_selected else "#e5e7eb"};
+            background: {"#eff6ff" if is_selected else "white"};
+            padding: 1.25rem;
+            border-radius: 0.75rem;
+            margin-bottom: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        '>
+            <div style='display: flex; justify-content: space-between; align-items: center;'>
+                <span style='font-weight: 500; color: #1f2937;'>{opt['label']}</span>
+                <span style='{risk_style} padding: 0.25rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 600;'>
+                    {risk_label}
+                </span>
+            </div>
+        </div>
+        """
+        
+        if st.button(opt['label'], key=f"opt_{current_q['id']}_{idx}", use_container_width=True):
+            if current_q['id'] not in st.session_state.answers:
+                st.session_state.answers[current_q['id']] = {}
+            st.session_state.answers[current_q['id']]['value'] = opt['value']
+            selected_option = opt['value']
+            st.rerun()
+    
+    # Follow-up question if option selected
+    if current_answer.get('value'):
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div style='background: #eff6ff; border: 1px solid #bfdbfe; padding: 1.5rem; border-radius: 0.75rem;'>
+        """, unsafe_allow_html=True)
+        
         st.markdown(f"**{current_q['follow_up']}**")
         
         if current_q['follow_up_type'] == 'number':
-            follow_up_value = st.number_input(
+            current_val = current_answer.get('follow_up', '')
+            
+            follow_up_text = st.text_input(
                 current_q['follow_up_label'],
-                min_value=0.0,
-                value=float(current_answer.get('follow_up', 0)) if current_answer.get('follow_up') else 0.0,
-                key=f"followup_{current_q['id']}"
+                value=current_val,
+                placeholder=current_q['follow_up_help'],
+                key=f"followup_{current_q['id']}",
+                help=current_q['follow_up_help']
             )
-            st.session_state.answers[current_q['id']]['follow_up'] = str(follow_up_value) if follow_up_value > 0 else None
+            
+            # Validate and store
+            if follow_up_text:
+                try:
+                    # Remove common formatting characters
+                    cleaned = follow_up_text.replace(',', '').replace('$', '').replace(' ', '').strip()
+                    float(cleaned)  # Validate it's a number
+                    st.session_state.answers[current_q['id']]['follow_up'] = cleaned
+                except ValueError:
+                    st.error("⚠️ Please enter a valid number")
+                    st.session_state.answers[current_q['id']]['follow_up'] = None
+            else:
+                st.session_state.answers[current_q['id']]['follow_up'] = None
         else:
             follow_up_value = st.text_input(
                 current_q['follow_up_label'],
                 value=current_answer.get('follow_up', ''),
-                key=f"followup_{current_q['id']}"
+                placeholder=current_q['follow_up_help'],
+                key=f"followup_{current_q['id']}",
+                help=current_q['follow_up_help']
             )
             st.session_state.answers[current_q['id']]['follow_up'] = follow_up_value if follow_up_value else None
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
     
     # Navigation buttons
-    st.write("")
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     col1, col2 = st.columns([1, 1])
     
     with col1:
         if st.session_state.current_question > 0:
-            if st.button("⬅️ Previous"):
+            if st.button("← Previous", use_container_width=True, type="secondary"):
                 st.session_state.current_question -= 1
                 st.rerun()
+        else:
+            st.markdown("")  # Empty space for alignment
     
     with col2:
         can_proceed = (
@@ -433,15 +562,16 @@ def show_question():
         )
         
         if st.session_state.current_question < len(questions) - 1:
-            if st.button("Next Question ➡️", disabled=not can_proceed):
+            if st.button("Next Question →", use_container_width=True, disabled=not can_proceed, type="primary"):
                 st.session_state.current_question += 1
                 st.rerun()
         else:
-            if st.button("Generate Report 📊", disabled=not can_proceed):
+            if st.button("Generate Report 📊", use_container_width=True, disabled=not can_proceed, type="primary"):
                 st.session_state.show_report = True
                 st.rerun()
     
-    st.write("")
+    # Privacy notice
+    st.markdown("<br>", unsafe_allow_html=True)
     st.info("🔒 Your responses are confidential and used only to generate your personalized report")
 
 # Main app logic
